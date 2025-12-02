@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrderBot 🍕</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      min-height: 100vh; /* Fix for mobile */
+    }
+
+    .chat-container {
+      background: #ffffff;
+      max-width: 700px;
+      width: 100%;
+      margin: 0;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+      background: #ff6b35;
+      color: white;
+      font-weight: bold;
+      font-size: 1.3rem;
+    }
+
+    .chat-messages {
+      padding: 16px 20px;
+      flex: 1;
+      overflow-y: auto;
+      background: #fafafa;
+    }
+
+    .message {
+      margin-bottom: 12px;
+      max-width: 80%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      font-size: 1rem;
+    }
+
+    .message.user {
+      background: #007bff;
+      color: #ffffff;
+      margin-left: auto;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.assistant {
+      background: #f0f0f0;
+      color: #333333;
+      margin-right: auto;
+      border-bottom-left-radius: 2px;
+    }
+
+    .chat-input {
+      padding: 10px 12px 12px;
+      border-top: 1px solid #ddd;
+      display: flex;
+      gap: 8px;
+    }
+
+    .chat-input input {
+      flex: 1;
+      padding: 14px 16px;
+      border-radius: 999px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    .chat-input button {
+      padding: 14px 20px;
+      border-radius: 999px;
+      border: none;
+      background: #ff6b35;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .chat-input button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: #777;
+      padding: 0 20px 8px;
+    }
+
+    /* --- Mobile adjustments --- */
+    @media (max-width: 600px) {
+      .chat-header {
+        font-size: 1.4rem;
+        padding: 14px;
+      }
+
+      .message {
+        font-size: 1.1rem;
+      }
+
+      .chat-input input {
+        font-size: 1.1rem;
+        padding: 16px;
+      }
+
+      .chat-input button {
+        font-size: 1.1rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+       KunAI – Service Chatbot
+    </div>
+    <div id="messages" class="chat-messages"></div>
+    <div class="status" id="status"></div>
+    <form id="chat-form" class="chat-input">
+      <input id="message-input" type="text" placeholder="Type your order or say hi..." autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById("messages");
+    const formEl = document.getElementById("chat-form");
+    const inputEl = document.getElementById("message-input");
+    const statusEl = document.getElementById("status");
+
+
+    // 🔐 Per-browser session ID stored in localStorage
+    function getSessionId() {
+  	const key = "orderbot_session_id";
+  	let id = sessionStorage.getItem(key); // 👈 use sessionStorage instead
+	if (!id) {
+	  id = self.crypto?.randomUUID
+		? self.crypto.randomUUID()
+	        : Math.random().toString(36).slice(2);
+	  sessionStorage.setItem(key, id);
+  }
+  return id;
+}
+
+  const sessionId = getSessionId();
+
+  function addMessage(text, sender) {
+      const div = document.createElement("div");
+      div.classList.add("message", sender);
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function sendMessage(message) {
+    addMessage(message, "user");
+    statusEl.textContent = "Assistant is thinking...";
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, sessionId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("Server error response:", err);
+        throw new Error(err.error || "Request failed");
+      }
+
+      const data = await res.json();
+      console.log("Server response:", data); // helpful for debugging
+
+      addMessage(data.reply, "assistant");
+      statusEl.textContent = "";
+
+      if (data.orderCompleted) {
+        console.log("Order completed — redirecting...");
+        if (data.jiraIssueKey) {
+           // save Jira issue key in sessionStorage so thankyou.html can read it
+           sessionStorage.setItem("latestOrderJiraKey", data.jiraIssueKey);
+        }
+        setTimeout(() => {
+          window.location.href = "/thankyou.html";
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      addMessage(
+        "Oops, something went wrong. Please try again.",
+        "assistant"
+      );
+      statusEl.textContent = "Error talking to server.";
+    }
+  }
+
+
+    // Initial greeting (client-side)
+    //addMessage("Hi! I'm KunAI. What can I do for you today 🍕", "assistant");
+    addMessage("Hi! I'm KunAI. What can I do for you today?", "assistant");
+
+    formEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const message = inputEl.value.trim();
+      if (!message) return;
+      inputEl.value = "";
+      sendMessage(message);
+    });
+  </script>
+</body>
+</html>
