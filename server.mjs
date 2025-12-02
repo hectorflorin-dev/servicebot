@@ -444,7 +444,7 @@ async function handleChatMessage(message, sessionId) {
   console.log("Calling OrderBot model...");
   const response = await callOpenAIWithRetry(
     {
-      model: "gpt-4o-mini", // "gpt-4.1-mini",
+      model: "gpt-4.1-mini", //gpt-4o-mini
       input: context,
       max_output_tokens: 400, // cap reply length to save tokens
       temperature: 0.3,
