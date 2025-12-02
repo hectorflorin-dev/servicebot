@@ -210,10 +210,10 @@ async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callOpenAIWithRetry(payload, retries = 2, usageLabel = "") {
+async function callOpenAIWithRetry(payload, retries = 1, usageLabel = "") {
   let lastError;
 
-  for (let i = 0; i < retries; i++) {
+  for (let i = 0; i <= retries; i++) {
     try {
       const response = await client.responses.create(payload);
 
@@ -223,7 +223,9 @@ async function callOpenAIWithRetry(payload, retries = 2, usageLabel = "") {
       const totalTokens = usage.total_tokens;
 
       console.log(
-        `🔢 OpenAI usage${usageLabel ? " (" + usageLabel + ")" : ""} ${payload.model}`
+        `🔢 OpenAI usage${usageLabel ? " (" + usageLabel + ")" : ""} ${
+          payload.model
+        }`
       );
       console.log(
         "   input_tokens:",
@@ -241,43 +243,21 @@ async function callOpenAIWithRetry(payload, retries = 2, usageLabel = "") {
       const isRateLimit =
         err.status === 429 || err.code === "rate_limit_exceeded";
 
-      if (!isRateLimit || i === retries - 1) {
-        // Non-rate-limit error, or no retries left → rethrow
+      if (!isRateLimit || i === retries) {
+        // Non-rate-limit error OR no retries left
         throw err;
       }
 
-      // Fallback delay if we can’t read headers
-      let delayMs = 20_000;
-
-      try {
-        const headers = err.headers || err.response?.headers;
-
-        let reset =
-          headers?.get?.("x-ratelimit-reset-requests") ??
-          headers?.["x-ratelimit-reset-requests"];
-
-        if (reset && typeof reset === "string") {
-          // reset is like "20s" or "8h13m13.657s"
-          const secondsMatch = reset.match(/(\d+(\.\d+)?)s/);
-          if (secondsMatch) {
-            const seconds = parseFloat(secondsMatch[1]);
-            delayMs = Math.max(5_000, seconds * 1000);
-          }
-        }
-      } catch (e) {
-        // If we can’t parse headers, we just keep delayMs = 20s
-      }
-
+      const delayMs = 20_000; // 20 seconds, per error message
       console.warn(
-        `⚠️ Rate limited (attempt ${i + 1}/${retries}). Retrying in ${Math.round(
-          delayMs / 1000
-        )}s...`
+        `⚠️ Rate limited (attempt ${i + 1}/${
+          retries + 1
+        }). Retrying in ${delayMs / 1000}s...`
       );
       await sleep(delayMs);
     }
   }
 
-  // Just in case, though we rethrow above.
   throw lastError;
 }
 
