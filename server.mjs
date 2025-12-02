@@ -206,12 +206,17 @@ async function sendOrderEmail(orderText) {
 // ============================================
 //  RATE LIMIT RETRY WRAPPER + TOKEN LOGGING
 // ============================================
-async function callOpenAIWithRetry(payload, retries = 3, usageLabel = "") {
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callOpenAIWithRetry(payload, retries = 2, usageLabel = "") {
+  let lastError;
+
   for (let i = 0; i < retries; i++) {
     try {
       const response = await client.responses.create(payload);
 
-      // 🔢 Log de uso de tokens
       const usage = response.usage || {};
       const inputTokens = usage.input_tokens ?? usage.prompt_tokens;
       const outputTokens = usage.output_tokens ?? usage.completion_tokens;
@@ -231,16 +236,51 @@ async function callOpenAIWithRetry(payload, retries = 3, usageLabel = "") {
 
       return response;
     } catch (err) {
-      if (err.status === 429 && i < retries - 1) {
-        const delayMs = (i + 1) * 1000;
-        console.warn(`⚠️ Rate limited, retrying in ${delayMs}ms.`);
-        await new Promise((r) => setTimeout(r, delayMs));
-      } else {
+      lastError = err;
+
+      const isRateLimit =
+        err.status === 429 || err.code === "rate_limit_exceeded";
+
+      if (!isRateLimit || i === retries - 1) {
+        // Non-rate-limit error, or no retries left → rethrow
         throw err;
       }
+
+      // Fallback delay if we can’t read headers
+      let delayMs = 20_000;
+
+      try {
+        const headers = err.headers || err.response?.headers;
+
+        let reset =
+          headers?.get?.("x-ratelimit-reset-requests") ??
+          headers?.["x-ratelimit-reset-requests"];
+
+        if (reset && typeof reset === "string") {
+          // reset is like "20s" or "8h13m13.657s"
+          const secondsMatch = reset.match(/(\d+(\.\d+)?)s/);
+          if (secondsMatch) {
+            const seconds = parseFloat(secondsMatch[1]);
+            delayMs = Math.max(5_000, seconds * 1000);
+          }
+        }
+      } catch (e) {
+        // If we can’t parse headers, we just keep delayMs = 20s
+      }
+
+      console.warn(
+        `⚠️ Rate limited (attempt ${i + 1}/${retries}). Retrying in ${Math.round(
+          delayMs / 1000
+        )}s...`
+      );
+      await sleep(delayMs);
     }
   }
+
+  // Just in case, though we rethrow above.
+  throw lastError;
 }
+
 
 // ============================================
 //  SENTIMENT ANALYZER (currently unused)
