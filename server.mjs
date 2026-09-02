@@ -346,6 +346,7 @@ function getContextForSession(sessionId) {
  * Replaces all non-system messages with a single summary message.
  */
 async function summarizeContextIfNeeded(sessionId) {
+  return; // 🔧 disable for now while testing rate limits
   const context = sessions.get(sessionId);
   if (!context) return;
 
@@ -405,15 +406,56 @@ Do NOT add new information. Just summarize what is there.
 }
 
 // ============================================
+//  SIMPLE LOCAL FALLBACK
+// ============================================
+function getFallbackResponse(message) {
+  const text = String(message || "").toLowerCase().trim();
+
+  // KUNSTOCK
+  if (text.includes("kunstock")) {
+    return (
+      "Hello and welcome to KunAI! 👋🎉 " +
+      "It's great to have you here! Welcome, welcome, welcome! " +
+      "I hope you're having a fantastic day. 😊 " +
+      "I'm currently running in limited mode, but I'm still here and happy to help!"
+    );
+  }
+
+  // WHAT
+  if (text.includes("what")) {
+    return (
+      "If your computer is running slowly, try closing applications you are not using, " +
+      "restarting your computer, and checking whether any updates are pending. " +
+      "You can also check Task Manager to see whether an application is using too much CPU or memory."
+    );
+  }
+
+  // Anything else
+  return (
+    "I'm currently running in limited mode. " +
+    "Please try again later when my AI service is available."
+  );
+}
+
+
+// ============================================
 //  MAIN CHAT HANDLER
 // ============================================
 async function handleChatMessage(message, sessionId) {
   const sid = sessionId || "default-session";
+
   // ensure context exists
   getContextForSession(sid);
 
-  // 0. Summarize context if it's already too long (before adding new user msg)
-  await summarizeContextIfNeeded(sid);
+  // 0. Summarize context if it's already too long
+  // If this fails because OpenAI is unavailable, don't stop the chat.
+  try {
+    await summarizeContextIfNeeded(sid);
+  } catch (err) {
+    console.warn(
+      "⚠️ Could not summarize context. Continuing without summarization."
+    );
+  }
 
   const context = getContextForSession(sid);
 
@@ -428,8 +470,10 @@ async function handleChatMessage(message, sessionId) {
   if (sentiment !== "safe") {
     const safeReply =
       "Hey, solo soy el perkin aca. Let’s keep it friendly – ¿en qué te puedo ayudar?";
+
     context.push({ role: "user", content: message });
     context.push({ role: "assistant", content: safeReply });
+
     return {
       reply: safeReply,
       orderCompleted: false,
@@ -438,25 +482,41 @@ async function handleChatMessage(message, sessionId) {
   }
   */
 
-  // 2. Normal conversation flow
+  // 2. Add user message to conversation
   context.push({ role: "user", content: message });
 
-  console.log("Calling OrderBot model...");
-  const response = await callOpenAIWithRetry(
-    {
-      model: "gpt-4.1-mini", //gpt-4o-mini
-      input: context,
-      max_output_tokens: 400, // cap reply length to save tokens
-      temperature: 0.3,
-    },
-    3,
-    `chat for session ${sid}`
-  );
+  let assistantText;
 
-  let assistantText =
-    response.output_text || "Sorry, I had trouble answering that.";
+  try {
+    console.log("🤖 Calling OpenAI...");
 
-  console.log("Assistant reply (raw):", assistantText);
+    const response = await callOpenAIWithRetry(
+      {
+        model: "gpt-4.1-mini",
+        input: context,
+        max_output_tokens: 400,
+        temperature: 0.3,
+      },
+      3,
+      `chat for session ${sid}`
+    );
+
+    assistantText =
+      response.output_text || "Sorry, I had trouble answering that.";
+
+    console.log("Assistant reply (raw):", assistantText);
+
+  } catch (err) {
+
+    // OpenAI failed: use simple local response instead
+    console.warn(
+      "⚠️ OpenAI unavailable. Using KunAI local fallback."
+    );
+
+    assistantText = getFallbackResponse(message);
+
+    console.log("🛟 Local fallback reply:", assistantText);
+  }
 
   // 3. Detect completion and extract machine-readable fields
   const completed = isOrderCompleted(assistantText);
@@ -468,19 +528,24 @@ async function handleChatMessage(message, sessionId) {
   } = extractTicketFields(assistantText);
 
   // 4. Strip tags the user SHOULD NOT see
-  let cleanedReply = stripOrderCompletedTag(assistantText); // MUST be let, not const
-  cleanedReply = stripTicketBlock(cleanedReply); // remove <ticket>...</ticket>
+  let cleanedReply = stripOrderCompletedTag(assistantText);
+  cleanedReply = stripTicketBlock(cleanedReply);
 
   console.log("Order completed?", completed);
 
   let jiraIssueKey = null;
 
   // Save the user-visible reply
-  context.push({ role: "assistant", content: cleanedReply });
+  context.push({
+    role: "assistant",
+    content: cleanedReply,
+  });
 
   // 5. If completed, send email + create Jira ticket
   if (completed) {
-    console.log("📧 Order completed. Sending email & creating Jira issue...");
+    console.log(
+      "📧 Order completed. Sending email & creating Jira issue..."
+    );
 
     // email
     try {
@@ -492,17 +557,36 @@ async function handleChatMessage(message, sessionId) {
 
     // jira
     try {
-      const summary = ticketSummary || "New support request 🛠️ from KunAI";
+      const summary =
+        ticketSummary ||
+        "New support request 🛠️ from KunAI";
+
       const description =
         ticketDescription ||
-        `${cleanedReply}\n\n(Category: ${ticketCategory || "Uncategorized"})`;
+        `${cleanedReply}\n\n(Category: ${
+          ticketCategory || "Uncategorized"
+        })`;
 
-      const jiraIssue = await createJiraIssue(summary, description);
+      const jiraIssue = await createJiraIssue(
+        summary,
+        description
+      );
+
       jiraIssueKey = jiraIssue.key;
-      console.log("✅ Jira issue created:", jiraIssueKey);
 
-      // OPTIONAL: after a completed ticket, reset context to start fresh next time
-      sessions.set(sid, [{ role: "system", content: systemPrompt }]);
+      console.log(
+        "✅ Jira issue created:",
+        jiraIssueKey
+      );
+
+      // reset context after completed ticket
+      sessions.set(sid, [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+      ]);
+
     } catch (jiraErr) {
       console.error(
         "❌ Failed to create Jira issue:",
@@ -511,7 +595,7 @@ async function handleChatMessage(message, sessionId) {
     }
   }
 
-  // 6. Return values for Web/WhatsApp UI
+  // 6. Return values for Web/WhatsApp
   return {
     reply: cleanedReply,
     orderCompleted: completed,
