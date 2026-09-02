@@ -405,36 +405,116 @@ Do NOT add new information. Just summarize what is there.
   );
 }
 
-// ============================================
-//  SIMPLE LOCAL FALLBACK
-// ============================================
+// ============================================================
+// LOCAL FALLBACK RESPONSES
+// Used ONLY when OpenAI is unavailable because of rate limiting
+// ============================================================
+
 function getFallbackResponse(message) {
-  const text = String(message || "").toLowerCase().trim();
+    const text = String(message || "").trim().toLowerCase();
 
-  // KUNSTOCK
-  if (text.includes("kunstock")) {
-    return (
-      "Hello and welcome to KunAI! 👋🎉 " +
-      "It's great to have you here! Welcome, welcome, welcome! " +
-      "I hope you're having a fantastic day. 😊 " +
-      "I'm currently running in limited mode, but I'm still here and happy to help!"
-    );
-  }
+    // --------------------------------------------------------
+    // KUNSTOCK
+    // --------------------------------------------------------
+    if (text.includes("kunstock")) {
+        return (
+            "Hello and welcome to KunAI! 👋🎉 " +
+            "Welcome, welcome, welcome! It's great to have you here! 😊 " +
+            "I hope you're having a fantastic day. " +
+            "I'm KunAI and I'm very happy to see you. " +
+            "How can I help you today?"
+        );
+    }
 
-  // WHAT
-  if (text.includes("what")) {
-    return (
-      "If your computer is running slowly, try closing applications you are not using, " +
-      "restarting your computer, and checking whether any updates are pending. " +
-      "You can also check Task Manager to see whether an application is using too much CPU or memory."
-    );
-  }
+    // --------------------------------------------------------
+    // WHAT
+    // --------------------------------------------------------
+    if (text.includes("what")) {
+        return (
+            "If your computer is running slowly, try closing applications " +
+            "you are not using, restarting your computer, and checking whether " +
+            "any updates are pending. You can also open Task Manager and check " +
+            "whether an application is using too much CPU or memory."
+        );
+    }
 
-  // Anything else
-  return (
-    "I'm currently running in limited mode. " +
-    "Please try again later when my AI service is available."
-  );
+    // No keyword matched
+    return null;
+}
+
+
+// ============================================================
+// OPENAI CALL WITH FALLBACK
+// ============================================================
+
+async function callOpenAIWithFallback(message, messages) {
+
+    try {
+
+        console.log("🤖 Calling OpenAI...");
+
+        // Use your EXISTING OpenAI function.
+        // This assumes your current function is called:
+        // callOpenAIWithRetry(messages)
+
+        const response = await callOpenAIWithFallback( message, messages);
+
+        console.log("✅ OpenAI responded successfully.");
+
+        return response;
+
+    } catch (error) {
+
+        // ----------------------------------------------------
+        // OPENAI RATE LIMIT
+        // ----------------------------------------------------
+
+        const isRateLimit =
+            error?.status === 429 ||
+            error?.code === "rate_limit_exceeded" ||
+            error?.error?.code === "rate_limit_exceeded";
+
+        if (isRateLimit) {
+
+            console.log(
+                "⚠️ OpenAI rate limit reached. Checking local fallback..."
+            );
+
+            const fallback = getFallbackResponse(message);
+
+            if (fallback) {
+                console.log(
+                    `✅ Local fallback matched for: "${message}"`
+                );
+
+                return fallback;
+            }
+
+            // OpenAI unavailable AND no local keyword matched
+            console.log(
+                "ℹ️ No local fallback matched."
+            );
+
+            return (
+                "I'm sorry, but my AI service is temporarily unavailable " +
+                "because its usage limit has been reached. " +
+                "I can still answer some basic predefined requests, " +
+                "or you can try again later."
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // THIS WAS NOT A RATE-LIMIT ERROR
+        // ----------------------------------------------------
+
+        console.error(
+            "❌ OpenAI failed for a reason other than rate limiting:",
+            error
+        );
+
+        throw error;
+    }
 }
 
 
@@ -470,6 +550,20 @@ async function handleChatMessage(message, sessionId) {
     return {
       reply:
         "If your computer is running slowly, try closing applications you are not using, " +
+        "restarting your computer, and checking whether any updates are pending. " +
+        "You can also open Task Manager and check whether an application is using too much CPU or memory.",
+      orderCompleted: false,
+      jiraIssueKey: null,
+    };
+  }
+
+  // Test keyword: what
+  if (text.includes("hola")) {
+    console.log("🟢 Local response triggered: hola");
+
+    return {
+      reply:
+        "Hola.  " +
         "restarting your computer, and checking whether any updates are pending. " +
         "You can also open Task Manager and check whether an application is using too much CPU or memory.",
       orderCompleted: false,
