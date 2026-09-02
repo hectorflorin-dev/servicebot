@@ -411,165 +411,48 @@ Do NOT add new information. Just summarize what is there.
 // ============================================================
 
 function getFallbackResponse(message) {
-    const text = String(message || "").trim().toLowerCase();
+  const text = String(message || "").trim().toLowerCase();
 
-    // --------------------------------------------------------
-    // KUNSTOCK
-    // --------------------------------------------------------
-    if (text.includes("kunstock")) {
-        return (
-            "Hello and welcome to KunAI! 👋🎉 " +
-            "Welcome, welcome, welcome! It's great to have you here! 😊 " +
-            "I hope you're having a fantastic day. " +
-            "I'm KunAI and I'm very happy to see you. " +
-            "How can I help you today?"
-        );
-    }
+  if (text.includes("kunstock")) {
+    return (
+      "Hello and welcome to KunAI! 👋🎉 " +
+      "Welcome, welcome, welcome! It's great to have you here! 😊 " +
+      "I hope you're having a fantastic day. " +
+      "I'm KunAI and I'm very happy to see you. " +
+      "How can I help you today?"
+    );
+  }
 
-    // --------------------------------------------------------
-    // WHAT
-    // --------------------------------------------------------
-    if (text.includes("what")) {
-        return (
-            "If your computer is running slowly, try closing applications " +
-            "you are not using, restarting your computer, and checking whether " +
-            "any updates are pending. You can also open Task Manager and check " +
-            "whether an application is using too much CPU or memory."
-        );
-    }
+  if (text.includes("what")) {
+    return (
+      "If your computer is running slowly, try closing applications " +
+      "you are not using, restarting your computer, and checking whether " +
+      "any updates are pending. You can also open Task Manager and check " +
+      "whether an application is using too much CPU or memory."
+    );
+  }
 
-    // No keyword matched
-    return null;
+  if (text.includes("hola")) {
+    return (
+      "¡Hola! 👋 En este momento mi servicio de IA no está disponible, " +
+      "pero todavía puedo ayudarte con algunas consultas básicas."
+    );
+  }
+
+  return (
+    "I'm sorry, but my AI service is temporarily unavailable because " +
+    "its usage limit has been reached. I can still answer some basic " +
+    "predefined requests, or you can try again later."
+  );
 }
 
-
-// ============================================================
-// OPENAI CALL WITH FALLBACK
-// ============================================================
-
-async function callOpenAIWithFallback(message, messages) {
-
-    try {
-
-        console.log("🤖 Calling OpenAI...");
-
-        // Use your EXISTING OpenAI function.
-        // This assumes your current function is called:
-        // callOpenAIWithRetry(messages)
-
-        const response = await callOpenAIWithFallback( message, messages);
-
-        console.log("✅ OpenAI responded successfully.");
-
-        return response;
-
-    } catch (error) {
-
-        // ----------------------------------------------------
-        // OPENAI RATE LIMIT
-        // ----------------------------------------------------
-
-        const isRateLimit =
-            error?.status === 429 ||
-            error?.code === "rate_limit_exceeded" ||
-            error?.error?.code === "rate_limit_exceeded";
-
-        if (isRateLimit) {
-
-            console.log(
-                "⚠️ OpenAI rate limit reached. Checking local fallback..."
-            );
-
-            const fallback = getFallbackResponse(message);
-
-            if (fallback) {
-                console.log(
-                    `✅ Local fallback matched for: "${message}"`
-                );
-
-                return fallback;
-            }
-
-            // OpenAI unavailable AND no local keyword matched
-            console.log(
-                "ℹ️ No local fallback matched."
-            );
-
-            return (
-                "I'm sorry, but my AI service is temporarily unavailable " +
-                "because its usage limit has been reached. " +
-                "I can still answer some basic predefined requests, " +
-                "or you can try again later."
-            );
-        }
-
-
-        // ----------------------------------------------------
-        // THIS WAS NOT A RATE-LIMIT ERROR
-        // ----------------------------------------------------
-
-        console.error(
-            "❌ OpenAI failed for a reason other than rate limiting:",
-            error
-        );
-
-        throw error;
-    }
-}
 
 
 // ============================================
 //  MAIN CHAT HANDLER
 // ============================================
 async function handleChatMessage(message, sessionId) {
-  const sid = sessionId || "default-session";
-  // ============================================
-  // LOCAL KEYWORD RESPONSES - NO OPENAI CALL
-  // ============================================
-  const text = String(message || "").toLowerCase().trim();
-
-  // Test keyword: kunstock
-  if (text.includes("kunstock")) {
-    console.log("🟢 Local response triggered: kunstock");
-
-    return {
-      reply:
-        "Hello and welcome to KunAI! 👋🎉 " +
-        "Welcome, welcome, welcome! It's great to have you here! 😊 " +
-        "I hope you're having a fantastic day. " +
-        "I'm KunAI and I'm very happy to see you. How can I help you today?",
-      orderCompleted: false,
-      jiraIssueKey: null,
-    };
-  }
-
-  // Test keyword: what
-  if (text.includes("what")) {
-    console.log("🟢 Local response triggered: what");
-
-    return {
-      reply:
-        "If your computer is running slowly, try closing applications you are not using, " +
-        "restarting your computer, and checking whether any updates are pending. " +
-        "You can also open Task Manager and check whether an application is using too much CPU or memory.",
-      orderCompleted: false,
-      jiraIssueKey: null,
-    };
-  }
-
-  // Test keyword: what
-  if (text.includes("hola")) {
-    console.log("🟢 Local response triggered: hola");
-
-    return {
-      reply:
-        "Hola.  " +
-        "restarting your computer, and checking whether any updates are pending. " +
-        "You can also open Task Manager and check whether an application is using too much CPU or memory.",
-      orderCompleted: false,
-      jiraIssueKey: null,
-    };
-  }
+   const sid = sessionId || "default-session";
 
   // ensure context exists
   getContextForSession(sid);
@@ -614,6 +497,8 @@ async function handleChatMessage(message, sessionId) {
 
   let assistantText;
 
+    let assistantText;
+
   try {
     console.log("🤖 Calling OpenAI...");
 
@@ -624,25 +509,40 @@ async function handleChatMessage(message, sessionId) {
         max_output_tokens: 400,
         temperature: 0.3,
       },
-      3,
+      1,
       `chat for session ${sid}`
     );
 
     assistantText =
       response.output_text || "Sorry, I had trouble answering that.";
 
+    console.log("✅ OpenAI responded successfully.");
     console.log("Assistant reply (raw):", assistantText);
 
   } catch (err) {
 
-    // OpenAI failed: use simple local response instead
-    console.warn(
-      "⚠️ OpenAI unavailable. Using KunAI local fallback."
-    );
+    const isRateLimit =
+      err?.status === 429 ||
+      err?.code === "rate_limit_exceeded" ||
+      err?.error?.code === "rate_limit_exceeded";
 
-    assistantText = getFallbackResponse(message);
+    if (isRateLimit) {
+      console.warn(
+        "⚠️ OpenAI rate limit reached. Using KunAI local fallback."
+      );
 
-    console.log("🛟 Local fallback reply:", assistantText);
+      assistantText = getFallbackResponse(message);
+
+      console.log("🛟 Local fallback reply:", assistantText);
+
+    } else {
+      console.error(
+        "❌ OpenAI failed for a reason other than rate limiting:",
+        err
+      );
+
+      throw err;
+    }
   }
 
   // 3. Detect completion and extract machine-readable fields
