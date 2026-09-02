@@ -497,8 +497,6 @@ async function handleChatMessage(message, sessionId) {
 
   let assistantText;
 
-    let assistantText;
-
   try {
     console.log("🤖 Calling OpenAI...");
 
