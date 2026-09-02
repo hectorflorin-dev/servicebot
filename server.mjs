@@ -443,6 +443,39 @@ function getFallbackResponse(message) {
 // ============================================
 async function handleChatMessage(message, sessionId) {
   const sid = sessionId || "default-session";
+  // ============================================
+  // LOCAL KEYWORD RESPONSES - NO OPENAI CALL
+  // ============================================
+  const text = String(message || "").toLowerCase().trim();
+
+  // Test keyword: kunstock
+  if (text.includes("kunstock")) {
+    console.log("🟢 Local response triggered: kunstock");
+
+    return {
+      reply:
+        "Hello and welcome to KunAI! 👋🎉 " +
+        "Welcome, welcome, welcome! It's great to have you here! 😊 " +
+        "I hope you're having a fantastic day. " +
+        "I'm KunAI and I'm very happy to see you. How can I help you today?",
+      orderCompleted: false,
+      jiraIssueKey: null,
+    };
+  }
+
+  // Test keyword: what
+  if (text.includes("what")) {
+    console.log("🟢 Local response triggered: what");
+
+    return {
+      reply:
+        "If your computer is running slowly, try closing applications you are not using, " +
+        "restarting your computer, and checking whether any updates are pending. " +
+        "You can also open Task Manager and check whether an application is using too much CPU or memory.",
+      orderCompleted: false,
+      jiraIssueKey: null,
+    };
+  }
 
   // ensure context exists
   getContextForSession(sid);
